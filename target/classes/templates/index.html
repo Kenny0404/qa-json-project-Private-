@@ -1,0 +1,1118 @@
+<!DOCTYPE html>
+<html lang="zh-TW" xmlns:th="http://www.thymeleaf.org">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>銀行 QA 系統 - RAG 智慧問答</title>
+    <!-- Marked.js for Markdown rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            min-height: 100vh;
+            color: #e4e4e4;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 30px 20px;
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 25px;
+        }
+
+        @media (max-width: 900px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .header {
+            grid-column: 1 / -1;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #00d4ff 0%, #9b59b6 50%, #e74c3c 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: #94a3b8;
+            font-size: 1rem;
+        }
+
+        .feature-badges {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            background: rgba(155, 89, 182, 0.2);
+            border: 1px solid rgba(155, 89, 182, 0.4);
+            padding: 6px 15px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            color: #bb8fce;
+        }
+
+        .badge.rag {
+            background: rgba(0, 212, 255, 0.2);
+            border: 1px solid rgba(0, 212, 255, 0.4);
+            color: #00d4ff;
+        }
+
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .chat-container {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 650px;
+        }
+
+        .chat-header {
+            background: rgba(155, 89, 182, 0.2);
+            padding: 15px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chat-header h2 {
+            font-size: 1.1rem;
+            color: #e2e8f0;
+        }
+
+        .mode-indicator {
+            font-size: 0.75rem;
+            padding: 4px 12px;
+            border-radius: 10px;
+            background: rgba(0, 212, 255, 0.2);
+            color: #00d4ff;
+        }
+
+        .mode-indicator.offline {
+            background: rgba(231, 76, 60, 0.2);
+            color: #e74c3c;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .message {
+            max-width: 90%;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            align-self: flex-end;
+        }
+
+        .message.system {
+            align-self: flex-start;
+        }
+
+        .message-bubble {
+            padding: 12px 16px;
+            border-radius: 18px;
+            line-height: 1.6;
+        }
+
+        .message.user .message-bubble {
+            background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
+            color: #fff;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.system .message-bubble {
+            background: rgba(255, 255, 255, 0.08);
+            color: #e2e8f0;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-time {
+            font-size: 0.7rem;
+            color: #64748b;
+            margin-top: 5px;
+        }
+
+        .message.user .message-time {
+            text-align: right;
+        }
+
+        .message.system .message-time {
+            text-align: left;
+        }
+
+        /* RAG 回應樣式 */
+        .rag-answer {
+            margin-bottom: 15px;
+            padding: 12px;
+            background: rgba(0, 212, 255, 0.1);
+            border-radius: 12px;
+            border-left: 3px solid #00d4ff;
+        }
+
+        /* Markdown 渲染樣式 */
+        .rag-answer h1,
+        .rag-answer h2,
+        .rag-answer h3 {
+            color: #00d4ff;
+            margin: 10px 0 5px 0;
+        }
+
+        .rag-answer ul,
+        .rag-answer ol {
+            margin-left: 20px;
+            margin-bottom: 10px;
+        }
+
+        .rag-answer li {
+            margin: 5px 0;
+        }
+
+        .rag-answer strong {
+            color: #fff;
+        }
+
+        .rag-answer code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+
+        .rag-answer p {
+            margin: 8px 0;
+        }
+
+        .sources-toggle {
+            cursor: pointer;
+            color: #94a3b8;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-top: 10px;
+        }
+
+        .sources-toggle:hover {
+            color: #e2e8f0;
+        }
+
+        .sources-container {
+            display: none;
+            margin-top: 10px;
+        }
+
+        .sources-container.show {
+            display: block;
+        }
+
+        .faq-item {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+            padding: 10px;
+            margin-bottom: 8px;
+            border-left: 3px solid #9b59b6;
+        }
+
+        .faq-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+
+        .faq-id {
+            background: linear-gradient(135deg, #9b59b6 0%, #e74c3c 100%);
+            color: #fff;
+            font-size: 0.65rem;
+            padding: 2px 8px;
+            border-radius: 8px;
+        }
+
+        .faq-score {
+            font-size: 0.7rem;
+            color: #00d4ff;
+        }
+
+        .faq-question {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #00d4ff;
+            margin-bottom: 4px;
+        }
+
+        .faq-answer {
+            font-size: 0.8rem;
+            color: #cbd5e1;
+            line-height: 1.5;
+        }
+
+        .faq-item {
+            cursor: pointer;
+            transition: background 0.2s ease;
+        }
+
+        .faq-item:hover {
+            background: rgba(155, 89, 182, 0.2);
+        }
+
+        .faq-expand-icon {
+            font-size: 0.7rem;
+            color: #9b59b6;
+            transition: transform 0.2s ease;
+        }
+
+        .faq-answer-full {
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid rgba(155, 89, 182, 0.3);
+        }
+
+        .faq-answer-content {
+            font-size: 0.8rem;
+            color: #cbd5e1;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .chat-input-area {
+            padding: 15px 20px;
+            background: rgba(0, 0, 0, 0.2);
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chat-input {
+            flex: 1;
+            padding: 14px 18px;
+            font-size: 1rem;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-radius: 25px;
+            background: rgba(0, 0, 0, 0.3);
+            color: #fff;
+            transition: all 0.3s ease;
+        }
+
+        .chat-input:focus {
+            outline: none;
+            border-color: #9b59b6;
+            box-shadow: 0 0 15px rgba(155, 89, 182, 0.3);
+        }
+
+        .chat-input::placeholder {
+            color: #64748b;
+        }
+
+        .send-btn {
+            padding: 14px 25px;
+            font-size: 1rem;
+            font-weight: 600;
+            color: #fff;
+            background: linear-gradient(135deg, #9b59b6 0%, #e74c3c 100%);
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .send-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 20px rgba(155, 89, 182, 0.4);
+        }
+
+        .send-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .sidebar-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar-card h3 {
+            font-size: 1rem;
+            color: #e2e8f0;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .quick-btns {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .quick-btn {
+            padding: 8px 14px;
+            font-size: 0.8rem;
+            color: #94a3b8;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .quick-btn:hover {
+            background: rgba(155, 89, 182, 0.2);
+            border-color: rgba(155, 89, 182, 0.4);
+            color: #bb8fce;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 15px 10px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 12px;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #00d4ff;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #64748b;
+            margin-top: 5px;
+        }
+
+        .action-btns {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .action-btn {
+            padding: 12px;
+            font-size: 0.85rem;
+            color: #e2e8f0;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .action-btn:hover {
+            background: rgba(231, 76, 60, 0.2);
+            border-color: rgba(231, 76, 60, 0.4);
+        }
+
+        .typing-indicator {
+            display: none;
+            align-self: flex-start;
+            padding: 15px;
+        }
+
+        .typing-indicator.show {
+            display: block;
+        }
+
+        .typing-dots {
+            display: flex;
+            gap: 5px;
+        }
+
+        .typing-dots span {
+            width: 8px;
+            height: 8px;
+            background: #9b59b6;
+            border-radius: 50%;
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+
+        .typing-dots span:nth-child(1) {
+            animation-delay: -0.32s;
+        }
+
+        .typing-dots span:nth-child(2) {
+            animation-delay: -0.16s;
+        }
+
+        @keyframes bounce {
+
+            0%,
+            80%,
+            100% {
+                transform: scale(0);
+            }
+
+            40% {
+                transform: scale(1);
+            }
+        }
+
+        /* Streaming 游標 */
+        .streaming-cursor {
+            display: inline-block;
+            width: 8px;
+            height: 16px;
+            background: #00d4ff;
+            animation: blink 1s infinite;
+            margin-left: 2px;
+            vertical-align: middle;
+        }
+
+        @keyframes blink {
+
+            0%,
+            50% {
+                opacity: 1;
+            }
+
+            51%,
+            100% {
+                opacity: 0;
+            }
+        }
+
+        /* 建議關鍵字按鈕 */
+        .suggest-keywords {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .suggest-btn {
+            background: linear-gradient(135deg, #3498db, #2980b9);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(52, 152, 219, 0.3);
+        }
+
+        .suggest-btn:hover {
+            background: linear-gradient(135deg, #2ecc71, #27ae60);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(46, 204, 113, 0.4);
+        }
+
+        .suggest-btn:active {
+            transform: translateY(0);
+        }
+
+        /* 停止按鈕 */
+        .stop-btn {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 10px rgba(231, 76, 60, 0.3);
+        }
+
+        .stop-btn:hover {
+            background: linear-gradient(135deg, #c0392b, #a93226);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+        }
+
+        /* 訊息操作按鈕 */
+        .message-actions {
+            display: none;
+            position: absolute;
+            right: -10px;
+            top: 50%;
+            transform: translateY(-50%);
+            gap: 5px;
+        }
+
+        .message.user:hover .message-actions {
+            display: flex;
+        }
+
+        .msg-action-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s ease;
+        }
+
+        .msg-action-btn:hover {
+            background: rgba(255, 255, 255, 0.4);
+            transform: scale(1.1);
+        }
+
+        .message.user {
+            position: relative;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏦 銀行智慧問答系統</h1>
+            <p>RAG × Streaming × Markdown</p>
+            <div class="feature-badges">
+                <span class="badge rag">🤖 RAG 生成</span>
+                <span class="badge">⚡ Streaming</span>
+                <span class="badge">📝 Markdown</span>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="chat-container">
+                <div class="chat-header">
+                    <h2>💬 對話視窗</h2>
+                    <span class="mode-indicator" id="modeIndicator">載入中...</span>
+                </div>
+
+                <div class="chat-messages" id="chatMessages">
+                    <div class="message system">
+                        <div class="message-bubble">
+                            👋 您好！我是銀行 QA 助手（RAG + Streaming 模式）。<br>
+                            回答會即時串流顯示，並支援 Markdown 格式。
+                        </div>
+                    </div>
+                </div>
+
+                <div class="typing-indicator" id="typingIndicator">
+                    <div class="typing-dots">
+                        <span></span><span></span><span></span>
+                    </div>
+                </div>
+
+                <div class="chat-input-area">
+                    <div class="input-wrapper">
+                        <input type="text" id="chatInput" class="chat-input" placeholder="輸入您的問題..." autocomplete="off">
+                        <button class="send-btn" id="sendBtn" onclick="sendMessage()">發送</button>
+                        <button class="stop-btn" id="stopBtn" onclick="stopQuery()" style="display:none;">⏹ 停止</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="sidebar-card">
+                <h3>⚡ 快速查詢</h3>
+                <div class="quick-btns">
+                    <button class="quick-btn" onclick="quickSearch('標準型交易流程')">標準型交易</button>
+                    <button class="quick-btn" onclick="quickSearch('買方還款怎麼操作')">買方還款</button>
+                    <button class="quick-btn" onclick="quickSearch('維持率計算')">維持率</button>
+                    <button class="quick-btn" onclick="quickSearch('額度管理')">額度管理</button>
+                </div>
+            </div>
+
+            <div class="sidebar-card">
+                <h3>📈 系統統計</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value" id="statFaq">-</div>
+                        <div class="stat-label">FAQ 總數</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="statMode">-</div>
+                        <div class="stat-label">運行模式</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="sidebar-card">
+                <h3>🛠️ 操作</h3>
+                <div class="action-btns">
+                    <button class="action-btn" onclick="clearChat()">🗑️ 清空對話</button>
+                    <button class="action-btn" onclick="newSession()">🔄 新建 Session</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 配置 marked.js
+        marked.setOptions({
+            breaks: true,
+            gfm: true
+        });
+
+        let sessionId = localStorage.getItem('qa_session_id') || null;
+        let messageCount = 0;
+        let currentStreamingDiv = null;
+        let streamingContent = '';
+        let consecutiveUnrelatedCount = 0;  // 連續護欄回應計數器
+        let currentEventSource = null;  // 追蹤當前 SSE 連線
+
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            document.getElementById('chatInput').addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') sendMessage();
+            });
+        });
+
+        async function sendMessage() {
+            const input = document.getElementById('chatInput');
+            const query = input.value.trim();
+            if (!query) return;
+
+            addMessage('user', query);
+            input.value = '';
+            input.disabled = true;
+            document.getElementById('sendBtn').disabled = true;
+            document.getElementById('typingIndicator').classList.add('show');
+
+            // 建立 Streaming 回應容器（使用唯一 ID）
+            const container = document.getElementById('chatMessages');
+            const time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+            const msgId = 'msg-' + Date.now();
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message system';
+            messageDiv.innerHTML = `
+                <div class="message-bubble">
+                    <div class="rag-answer" id="${msgId}-answer"><span class="streaming-cursor"></span></div>
+                    <div class="sources-wrapper" id="${msgId}-sources-wrapper"></div>
+                </div>
+                <div class="message-time">${time}</div>
+            `;
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+
+            // 獲取元素引用（避免 ID 衝突）
+            const answerEl = document.getElementById(`${msgId}-answer`);
+            const sourcesWrapperEl = document.getElementById(`${msgId}-sources-wrapper`);
+
+            let localStreamingContent = '';
+            let sources = [];
+            let eventSource = null;
+
+            try {
+                const url = `/api/faq/search/stream?question=${encodeURIComponent(query)}&topN=5` +
+                    (sessionId ? `&sessionId=${sessionId}` : '');
+
+                eventSource = new EventSource(url);
+                currentEventSource = eventSource;  // 追蹤當前連線供停止功能使用
+
+                // 顯示停止按鈕
+                document.getElementById('sendBtn').style.display = 'none';
+                document.getElementById('stopBtn').style.display = 'inline-block';
+
+                eventSource.addEventListener('session', (e) => {
+                    const data = JSON.parse(e.data);
+                    if (data.newSession || !sessionId) {
+                        sessionId = data.sessionId;
+                        localStorage.setItem('qa_session_id', sessionId);
+                    }
+                });
+
+                eventSource.addEventListener('sources', (e) => {
+                    const data = JSON.parse(e.data);
+                    sources = data.sources || [];
+                    document.getElementById('typingIndicator').classList.remove('show');
+                });
+
+                // 處理意圖分類結果（可能包含建議按鈕）
+                eventSource.addEventListener('intent', (e) => {
+                    const data = JSON.parse(e.data);
+
+                    // 追蹤連續護欄回應次數
+                    if (data.intent === 'UNRELATED' || data.intent === 'UNCLEAR') {
+                        consecutiveUnrelatedCount++;
+
+                        // 如果連續 3 次護欄回應，升級為聯繫資訊
+                        if (consecutiveUnrelatedCount >= 3) {
+                            sourcesWrapperEl.dataset.escalateToContact = 'true';
+                        }
+                    } else {
+                        // 重置計數器
+                        consecutiveUnrelatedCount = 0;
+                    }
+
+                    // 如果有建議關鍵字，準備按鈕 HTML（排除與當前問題相似的關鍵字）
+                    if (data.suggestKeywords && data.suggestKeywords.length > 0 && sourcesWrapperEl) {
+                        const queryLower = query.toLowerCase();
+                        const filteredKeywords = data.suggestKeywords.filter(kw => {
+                            const kwLower = kw.toLowerCase();
+                            // 排除與查詢完全相同或包含關係的關鍵字
+                            return !kwLower.includes(queryLower) && !queryLower.includes(kwLower);
+                        });
+
+                        if (filteredKeywords.length > 0) {
+                            let buttonsHtml = '<div class="suggest-keywords">';
+                            filteredKeywords.forEach(kw => {
+                                buttonsHtml += `<button class="suggest-btn" onclick="quickSearch('${escapeHtml(kw)}')">${escapeHtml(kw)}</button>`;
+                            });
+                            buttonsHtml += '</div>';
+                            // 儲存按鈕 HTML，等待回應完成後顯示
+                            sourcesWrapperEl.dataset.suggestButtons = buttonsHtml;
+                        }
+                    }
+                });
+
+                eventSource.addEventListener('thinking', (e) => {
+                    const data = JSON.parse(e.data);
+                    if (answerEl) {
+                        answerEl.innerHTML = '<span style="color:#94a3b8;">🤔 ' + data.message + '</span><span class="streaming-cursor"></span>';
+                    }
+                });
+
+                eventSource.addEventListener('chunk', (e) => {
+                    const data = JSON.parse(e.data);
+                    localStreamingContent += data.content;
+                    if (answerEl) {
+                        answerEl.innerHTML = marked.parse(localStreamingContent) + '<span class="streaming-cursor"></span>';
+                    }
+                    container.scrollTop = container.scrollHeight;
+                });
+
+                eventSource.addEventListener('done', (e) => {
+                    eventSource.close();
+
+                    // 檢查是否需要升級為聯繫資訊（連續 3 次護欄回應）
+                    if (sourcesWrapperEl && sourcesWrapperEl.dataset.escalateToContact === 'true') {
+                        if (answerEl) {
+                            answerEl.innerHTML = '抱歉，該問題請與李小姐聯繫：<br>電話：(02)2883-4228 #6633<br>Email：lara.li@vteamsystem.com.tw';
+                        }
+                        // 清除升級標記和建議按鈕
+                        delete sourcesWrapperEl.dataset.escalateToContact;
+                        delete sourcesWrapperEl.dataset.suggestButtons;
+                    } else {
+                        // 移除游標，最終渲染
+                        if (answerEl) {
+                            answerEl.innerHTML = marked.parse(localStreamingContent);
+                        }
+                    }
+
+                    // 添加來源
+                    if (sources.length > 0 && sourcesWrapperEl) {
+                        const sourceId = `${msgId}-sources`;
+                        let sourcesHtml = `<div class="sources-toggle" onclick="toggleSources('${sourceId}')">
+                            📚 查看來源 FAQ (${sources.length}筆) ▼
+                        </div>`;
+                        sourcesHtml += `<div class="sources-container" id="${sourceId}">`;
+
+                        sources.forEach((item, idx) => {
+                            const score = (item.score * 100).toFixed(1);
+                            const faqItemId = `${msgId}-faq-${idx}`;
+                            sourcesHtml += `
+                                <div class="faq-item" onclick="toggleFaqAnswer('${faqItemId}')">
+                                    <div class="faq-item-header">
+                                        <span class="faq-id">FAQ #${item.id}</span>
+                                        <span class="faq-score">RRF: ${score}%</span>
+                                        <span class="faq-expand-icon" id="${faqItemId}-icon">▼</span>
+                                    </div>
+                                    <div class="faq-question">Q: ${escapeHtml(item.question)}</div>
+                                    <div class="faq-answer-full" id="${faqItemId}" style="display:none;">
+                                        <div class="faq-answer-content">${escapeHtml(item.answer)}</div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        sourcesHtml += '</div>';
+                        sourcesWrapperEl.innerHTML = sourcesHtml;
+                    }
+
+                    // 顯示建議按鈕（如果有）
+                    if (sourcesWrapperEl && sourcesWrapperEl.dataset.suggestButtons) {
+                        sourcesWrapperEl.innerHTML += sourcesWrapperEl.dataset.suggestButtons;
+                    }
+
+                    resetButtons();
+                    input.focus();
+                });
+
+                eventSource.addEventListener('error', (e) => {
+                    try {
+                        const data = JSON.parse(e.data);
+                        console.error('Streaming error:', data.message);
+                    } catch (err) {
+                        console.error('SSE error event');
+                    }
+                    eventSource.close();
+
+                    if (answerEl) {
+                        answerEl.innerHTML = '<span style="color:#e74c3c;">生成答案時發生錯誤</span>';
+                    }
+                    document.getElementById('typingIndicator').classList.remove('show');
+                    input.disabled = false;
+                    document.getElementById('sendBtn').disabled = false;
+                });
+
+                eventSource.onerror = (e) => {
+                    console.error('SSE connection error');
+                    if (eventSource) eventSource.close();
+
+                    // 如果沒有內容，顯示聯繫資訊
+                    if (answerEl) {
+                        if (!localStreamingContent) {
+                            answerEl.innerHTML = '抱歉，該問題請與李小姐聯繫：<br>電話：(02)2883-4228 #6633<br>Email：lara.li@vteamsystem.com.tw';
+                        } else {
+                            answerEl.innerHTML = marked.parse(localStreamingContent);
+                        }
+                    }
+
+                    document.getElementById('typingIndicator').classList.remove('show');
+                    input.disabled = false;
+                    document.getElementById('sendBtn').disabled = false;
+                };
+
+            } catch (error) {
+                console.error('Search error:', error);
+                document.getElementById('typingIndicator').classList.remove('show');
+                if (answerEl) {
+                    answerEl.innerHTML = '搜尋時發生錯誤，請稍後再試。';
+                }
+                resetButtons();
+            }
+        }
+
+        // 重置按鈕狀態
+        function resetButtons() {
+            const input = document.getElementById('chatInput');
+            input.disabled = false;
+            document.getElementById('sendBtn').disabled = false;
+            document.getElementById('sendBtn').style.display = 'inline-block';
+            document.getElementById('stopBtn').style.display = 'none';
+            currentEventSource = null;
+        }
+
+        // 停止查詢
+        function stopQuery() {
+            if (currentEventSource) {
+                currentEventSource.close();
+                currentEventSource = null;
+            }
+            document.getElementById('typingIndicator').classList.remove('show');
+            resetButtons();
+            document.getElementById('chatInput').focus();
+        }
+
+        function addMessage(role, content) {
+            const container = document.getElementById('chatMessages');
+            const time = new Date().toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+            const msgId = 'user-msg-' + messageCount;
+
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${role}`;
+            messageDiv.id = msgId;
+            messageDiv.dataset.content = content;  // 儲存原始內容供編輯
+
+            if (role === 'user') {
+                messageDiv.innerHTML = `
+                    <div class="message-bubble">${escapeHtml(content)}</div>
+                    <div class="message-actions">
+                        <button class="msg-action-btn" onclick="editMessage('${msgId}')" title="編輯">✏️</button>
+                        <button class="msg-action-btn" onclick="deleteMessage('${msgId}')" title="刪除">🗑️</button>
+                    </div>
+                    <div class="message-time">${time}</div>
+                `;
+            } else {
+                messageDiv.innerHTML = `
+                    <div class="message-bubble">${escapeHtml(content)}</div>
+                    <div class="message-time">${time}</div>
+                `;
+            }
+
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+            messageCount++;
+        }
+
+        function toggleSources(id) {
+            const el = document.getElementById(id);
+            if (el) el.classList.toggle('show');
+        }
+
+        function quickSearch(keyword) {
+            document.getElementById('chatInput').value = keyword;
+            sendMessage();
+        }
+
+        // 展開/收合 FAQ 答案
+        function toggleFaqAnswer(faqItemId) {
+            const answerEl = document.getElementById(faqItemId);
+            const iconEl = document.getElementById(faqItemId + '-icon');
+            if (answerEl) {
+                const isHidden = answerEl.style.display === 'none';
+                answerEl.style.display = isHidden ? 'block' : 'none';
+                if (iconEl) {
+                    iconEl.textContent = isHidden ? '▲' : '▼';
+                }
+            }
+        }
+
+        function clearChat() {
+            document.getElementById('chatMessages').innerHTML = `
+                <div class="message system">
+                    <div class="message-bubble">👋 對話已清空。請輸入新的問題。</div>
+                </div>
+            `;
+            messageCount = 0;
+        }
+
+        // 編輯訊息
+        function editMessage(msgId) {
+            const msgEl = document.getElementById(msgId);
+            if (!msgEl) return;
+
+            const content = msgEl.dataset.content;
+            document.getElementById('chatInput').value = content;
+            document.getElementById('chatInput').focus();
+
+            // 刪除此訊息及其後所有訊息
+            deleteMessageAndFollowing(msgId);
+        }
+
+        // 刪除訊息（及其回覆）
+        function deleteMessage(msgId) {
+            const msgEl = document.getElementById(msgId);
+            if (!msgEl) return;
+
+            // 刪除用戶訊息
+            const nextEl = msgEl.nextElementSibling;
+            msgEl.remove();
+
+            // 如果下一個是系統回覆，也刪除
+            if (nextEl && nextEl.classList.contains('system')) {
+                nextEl.remove();
+            }
+        }
+
+        // 刪除指定訊息及其後所有訊息
+        function deleteMessageAndFollowing(msgId) {
+            const container = document.getElementById('chatMessages');
+            const msgEl = document.getElementById(msgId);
+            if (!msgEl) return;
+
+            // 收集要刪除的訊息
+            let current = msgEl;
+            const toRemove = [];
+            while (current) {
+                toRemove.push(current);
+                current = current.nextElementSibling;
+            }
+
+            toRemove.forEach(el => el.remove());
+        }
+
+        async function newSession() {
+            if (sessionId) {
+                try { await fetch(`/api/faq/session/${sessionId}`, { method: 'DELETE' }); } catch (e) { }
+            }
+            sessionId = null;
+            localStorage.removeItem('qa_session_id');
+            clearChat();
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/faq/stats');
+                const stats = await response.json();
+
+                document.getElementById('statFaq').textContent = stats.totalFaq || '-';
+                document.getElementById('statMode').textContent = stats.mode || '-';
+
+                const indicator = document.getElementById('modeIndicator');
+                if (stats.ollamaAvailable) {
+                    indicator.textContent = '🟢 RAG + Streaming';
+                    indicator.classList.remove('offline');
+                } else {
+                    indicator.textContent = '🟡 檢索模式';
+                    indicator.classList.add('offline');
+                }
+            } catch (e) {
+                console.error('Failed to load stats:', e);
+            }
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+
+</html>
