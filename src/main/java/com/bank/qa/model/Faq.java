@@ -7,19 +7,19 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
  * 包含問題與答案，支援語意檢索評分
  */
 public class Faq {
-    
+
     private int id;
     private String question;
     private String answer;
-    
+
     // 可選欄位，未來擴充用
     private String category;
     private String module;
     private String source;
-    
+
     // 語意檢索評分（不序列化到 JSON 檔案）
     private double score;
-    
+
     // 向量緩存（不序列化）
     @JsonIgnore
     private double[] vector;

@@ -10,7 +10,7 @@ public interface SessionService {
 
     /**
      * 取得指定 Session
-     * 
+     *
      * @param sessionId Session ID
      * @return ChatSession 或 null
      */
@@ -18,7 +18,7 @@ public interface SessionService {
 
     /**
      * 取得或建立 Session
-     * 
+     *
      * @param sessionId Session ID
      * @return ChatSession（若不存在則建立新的）
      */
@@ -26,7 +26,7 @@ public interface SessionService {
 
     /**
      * 清除指定 Session
-     * 
+     *
      * @param sessionId Session ID
      */
     void clearSession(String sessionId);
@@ -38,7 +38,7 @@ public interface SessionService {
 
     /**
      * 取得目前活躍的 Session 數量
-     * 
+     *
      * @return 活躍 Session 數量
      */
     int getActiveSessionCount();

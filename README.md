@@ -62,27 +62,27 @@ graph TB
 ```mermaid
 flowchart TD
     A[使用者提問] --> B{意圖分類}
-    
+
     B -->|UNRELATED| C[護欄回應]
     B -->|UNCLEAR| D[釐清建議]
     B -->|RELATED| E[繼續 RAG 流程]
-    
+
     C --> F{連續 3 次?}
     D --> F
-    
+
     F -->|是| G[顯示聯繫資訊]
     F -->|否| H[返回提示訊息]
-    
+
     E --> I[Multi-Query 擴展]
     I --> J[BM25 檢索 x3]
     J --> K[RRF 融合排序]
     K --> L[取 Top-N 結果]
     L --> M[LLM Streaming 生成]
     M --> N{回應是否有效?}
-    
+
     N -->|無法回答| O[增加護欄計數]
     N -->|有效回答| P[重置護欄計數]
-    
+
     O --> Q[返回結果]
     P --> Q
     G --> Q
@@ -104,13 +104,13 @@ sequenceDiagram
 
     U->>C: GET /api/faq/search/stream
     C->>CS: processStreamingChat()
-    
-    CS-->>U: SSE [session] 
-    
+
+    CS-->>U: SSE [session]
+
     CS->>GS: classifyIntent()
     GS-->>CS: IntentResult
     CS-->>U: SSE [intent]
-    
+
     alt UNRELATED/UNCLEAR
         CS-->>U: SSE [chunk] 護欄訊息
         CS-->>U: SSE [sources] []
@@ -119,19 +119,19 @@ sequenceDiagram
         CS->>LS: expandQuery()
         LS-->>CS: MultiQueryResult
         CS-->>U: SSE [multiquery]
-        
+
         CS->>FS: searchRag()
         FS-->>CS: RagSearchResult
         CS-->>U: SSE [sources]
-        
+
         CS-->>U: SSE [thinking]
-        
+
         CS->>LS: generateAnswerStreaming()
         loop 每個 Chunk
             LS-->>CS: chunk
             CS-->>U: SSE [chunk]
         end
-        
+
         CS-->>U: SSE [done]
     end
 ```
@@ -259,7 +259,7 @@ stateDiagram-v2
     Count1 --> Count2: 不相關問題
     Count2 --> Escalate: 不相關問題
     Escalate --> [*]: 顯示聯繫資訊
-    
+
     Count1 --> Normal: 相關問題
     Count2 --> Normal: 相關問題
 ```

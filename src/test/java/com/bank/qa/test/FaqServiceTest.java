@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * FAQ 服務測試類別
  * 測試 BM25 搜尋功能
- * 
+ *
  * 注意：Session 相關測試已移至 Integration Test，因需要 Spring DI
  */
 public class FaqServiceTest {
@@ -33,7 +33,7 @@ public class FaqServiceTest {
     @Test
     @DisplayName("測試 BM25 搜尋 - 標準型交易")
     public void testBm25SearchStandardTransaction() {
-        List<Faq> results = faqService.searchWithContext("標準型交易前資料建檔流程", null, 5);
+        List<Faq> results = faqService.searchWithContext("標準型交易前資料建檔流程", 5);
 
         assertNotNull(results, "搜尋結果不應為 null");
         assertFalse(results.isEmpty(), "搜尋結果不應為空");
@@ -45,7 +45,7 @@ public class FaqServiceTest {
     @Test
     @DisplayName("測試 BM25 搜尋 - 模糊查詢")
     public void testBm25SearchFuzzy() {
-        List<Faq> results = faqService.searchWithContext("怎麼還款", null, 5);
+        List<Faq> results = faqService.searchWithContext("怎麼還款", 5);
 
         assertNotNull(results, "搜尋結果不應為 null");
         boolean hasRepaymentResult = results.stream()
@@ -56,7 +56,7 @@ public class FaqServiceTest {
     @Test
     @DisplayName("測試 Top-N 限制 - 返回 3 條")
     public void testTopN_3() {
-        List<Faq> results = faqService.searchWithContext("交易", null, 3);
+        List<Faq> results = faqService.searchWithContext("交易", 3);
 
         assertNotNull(results, "搜尋結果不應為 null");
         assertTrue(results.size() <= 3, "結果數量不應超過 3");
@@ -65,7 +65,7 @@ public class FaqServiceTest {
     @Test
     @DisplayName("測試 Top-N 排序 - 分數遞減")
     public void testTopNSorting() {
-        List<Faq> results = faqService.searchWithContext("發票", null, 5);
+        List<Faq> results = faqService.searchWithContext("發票", 5);
 
         assertNotNull(results, "搜尋結果不應為 null");
         if (results.size() > 1) {
@@ -108,7 +108,7 @@ public class FaqServiceTest {
     @Test
     @DisplayName("測試空查詢")
     public void testEmptyQuery() {
-        List<Faq> results = faqService.searchWithContext("", null, 5);
+        List<Faq> results = faqService.searchWithContext("", 5);
 
         assertNotNull(results, "搜尋結果不應為 null");
         assertTrue(results.isEmpty(), "空查詢應回傳空列表");
@@ -117,7 +117,7 @@ public class FaqServiceTest {
     @Test
     @DisplayName("測試 null 查詢")
     public void testNullQuery() {
-        List<Faq> results = faqService.searchWithContext(null, null, 5);
+        List<Faq> results = faqService.searchWithContext(null, 5);
 
         assertNotNull(results, "搜尋結果不應為 null");
         assertTrue(results.isEmpty(), "null 查詢應回傳空列表");

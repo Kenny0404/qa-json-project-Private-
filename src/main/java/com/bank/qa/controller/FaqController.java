@@ -1,4 +1,4 @@
-package com.bank.qa.controller;
+package com.bank.qa.userapi.controller;
 
 import com.bank.qa.model.Faq;
 import com.bank.qa.model.RagSearchResult;
@@ -16,7 +16,7 @@ import java.util.*;
 /**
  * FAQ 控制器
  * 提供 REST API 端點
- * 
+ *
  * 注意：業務邏輯已移至 ChatService
  */
 @RestController
@@ -35,7 +35,7 @@ public class FaqController {
     /**
      * RAG 搜尋 - Streaming 版本
      */
-    @GetMapping(value = "/search/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    @GetMapping(value = "/search/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8")
     public SseEmitter searchStream(
             @RequestParam String question,
             @RequestParam(required = false) String sessionId,
@@ -101,6 +101,26 @@ public class FaqController {
         response.put("success", true);
         response.put("message", "Session 已清除");
         return response;
+    }
+
+    @DeleteMapping("/session/{sessionId}")
+    public Map<String, Object> deleteSession(@PathVariable String sessionId) {
+        logger.info("刪除 Session 請求: {}", sessionId);
+        faqService.clearSession(sessionId);
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("message", "Session 已刪除");
+        return response;
+    }
+
+    @GetMapping("/stats")
+    public Map<String, Object> getStats() {
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("totalFaq", faqService.getFaqCount());
+        stats.put("mode", "RAG");
+        stats.put("ollamaAvailable", faqService.isLlmAvailable());
+        stats.put("activeSessions", faqService.getActiveSessionCount());
+        return stats;
     }
 
     /**

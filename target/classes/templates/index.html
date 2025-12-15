@@ -5,8 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>銀行 QA 系統 - RAG 智慧問答</title>
-    <!-- Marked.js for Markdown rendering -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Local JS libraries -->
+    <script src="/js/marked.min.js"></script>
+    <script src="/js/purify.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -17,6 +18,7 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft JhengHei', 'Noto Sans TC', sans-serif;
             background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+            background-color: #0f0c29;
             min-height: 100vh;
             color: #e4e4e4;
         }
@@ -631,7 +633,10 @@
     </style>
 </head>
 
-<body>
+<body role="application">
+    <div id="debugBanner"
+        style="position:fixed;left:10px;top:10px;z-index:99999;background:rgba(0,0,0,0.7);color:#fff;padding:6px 10px;border-radius:8px;font-size:12px;display:none;">
+    </div>
     <div class="container">
         <div class="header">
             <h1>🏦 銀行智慧問答系統</h1>
@@ -669,6 +674,8 @@
                     <div class="input-wrapper">
                         <input type="text" id="chatInput" class="chat-input" placeholder="輸入您的問題..." autocomplete="off">
                         <button class="send-btn" id="sendBtn" onclick="sendMessage()">發送</button>
+                        <button class="stop-btn" id="cancelEditBtn" onclick="cancelEdit()"
+                            style="display:none;">取消編輯</button>
                         <button class="stop-btn" id="stopBtn" onclick="stopQuery()" style="display:none;">⏹ 停止</button>
                     </div>
                 </div>
@@ -721,20 +728,78 @@
         let messageCount = 0;
         let currentStreamingDiv = null;
         let streamingContent = '';
-        let consecutiveUnrelatedCount = 0;  // 連續護欄回應計數器
         let currentEventSource = null;  // 追蹤當前 SSE 連線
+        let editingMsgId = null;
+
+        function isStreaming() {
+            return currentEventSource != null;
+        }
+
+        function setMessageActionsDisabled(disabled) {
+            const actionEls = document.querySelectorAll('.message-actions');
+            actionEls.forEach(el => {
+                el.style.display = disabled ? 'none' : '';
+            });
+        }
+
+        function renderMarkdownSafe(markdown) {
+            const html = marked.parse(markdown || '');
+            return DOMPurify.sanitize(html);
+        }
 
         document.addEventListener('DOMContentLoaded', () => {
+            const banner = document.getElementById('debugBanner');
+            const debugEnabled = new URLSearchParams(window.location.search).get('debug') === '1';
+            window.__qaDebugEnabled = debugEnabled;
+            if (banner) {
+                banner.style.display = debugEnabled ? 'block' : 'none';
+                if (debugEnabled) {
+                    banner.textContent = 'UI loaded ' + new Date().toLocaleString('zh-TW');
+                }
+            }
+
             loadStats();
             document.getElementById('chatInput').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') sendMessage();
             });
         });
 
+        window.addEventListener('error', (e) => {
+            if (!window.__qaDebugEnabled) {
+                return;
+            }
+            const banner = document.getElementById('debugBanner');
+            if (banner) {
+                banner.style.display = 'block';
+                banner.textContent = 'UI error: ' + (e.message || 'unknown');
+            }
+        });
+
+        window.addEventListener('unhandledrejection', (e) => {
+            if (!window.__qaDebugEnabled) {
+                return;
+            }
+            const banner = document.getElementById('debugBanner');
+            if (banner) {
+                banner.style.display = 'block';
+                banner.textContent = 'UI promise error: ' + ((e.reason && e.reason.message) ? e.reason.message : 'unknown');
+            }
+        });
+
         async function sendMessage() {
             const input = document.getElementById('chatInput');
             const query = input.value.trim();
             if (!query) return;
+
+            if (editingMsgId) {
+                if (isStreaming()) {
+                    stopQuery();
+                }
+                deleteMessageAndFollowing(editingMsgId);
+                editingMsgId = null;
+                document.getElementById('cancelEditBtn').style.display = 'none';
+                document.getElementById('sendBtn').textContent = '發送';
+            }
 
             addMessage('user', query);
             input.value = '';
@@ -777,6 +842,7 @@
                 // 顯示停止按鈕
                 document.getElementById('sendBtn').style.display = 'none';
                 document.getElementById('stopBtn').style.display = 'inline-block';
+                setMessageActionsDisabled(false);
 
                 eventSource.addEventListener('session', (e) => {
                     const data = JSON.parse(e.data);
@@ -795,19 +861,6 @@
                 // 處理意圖分類結果（可能包含建議按鈕）
                 eventSource.addEventListener('intent', (e) => {
                     const data = JSON.parse(e.data);
-
-                    // 追蹤連續護欄回應次數
-                    if (data.intent === 'UNRELATED' || data.intent === 'UNCLEAR') {
-                        consecutiveUnrelatedCount++;
-
-                        // 如果連續 3 次護欄回應，升級為聯繫資訊
-                        if (consecutiveUnrelatedCount >= 3) {
-                            sourcesWrapperEl.dataset.escalateToContact = 'true';
-                        }
-                    } else {
-                        // 重置計數器
-                        consecutiveUnrelatedCount = 0;
-                    }
 
                     // 如果有建議關鍵字，準備按鈕 HTML（排除與當前問題相似的關鍵字）
                     if (data.suggestKeywords && data.suggestKeywords.length > 0 && sourcesWrapperEl) {
@@ -833,7 +886,7 @@
                 eventSource.addEventListener('thinking', (e) => {
                     const data = JSON.parse(e.data);
                     if (answerEl) {
-                        answerEl.innerHTML = '<span style="color:#94a3b8;">🤔 ' + data.message + '</span><span class="streaming-cursor"></span>';
+                        answerEl.innerHTML = '<span style="color:#94a3b8;">🤔 ' + escapeHtml(data.message) + '</span><span class="streaming-cursor"></span>';
                     }
                 });
 
@@ -841,7 +894,7 @@
                     const data = JSON.parse(e.data);
                     localStreamingContent += data.content;
                     if (answerEl) {
-                        answerEl.innerHTML = marked.parse(localStreamingContent) + '<span class="streaming-cursor"></span>';
+                        answerEl.innerHTML = renderMarkdownSafe(localStreamingContent) + '<span class="streaming-cursor"></span>';
                     }
                     container.scrollTop = container.scrollHeight;
                 });
@@ -849,19 +902,9 @@
                 eventSource.addEventListener('done', (e) => {
                     eventSource.close();
 
-                    // 檢查是否需要升級為聯繫資訊（連續 3 次護欄回應）
-                    if (sourcesWrapperEl && sourcesWrapperEl.dataset.escalateToContact === 'true') {
-                        if (answerEl) {
-                            answerEl.innerHTML = '抱歉，該問題請與李小姐聯繫：<br>電話：(02)2883-4228 #6633<br>Email：lara.li@vteamsystem.com.tw';
-                        }
-                        // 清除升級標記和建議按鈕
-                        delete sourcesWrapperEl.dataset.escalateToContact;
-                        delete sourcesWrapperEl.dataset.suggestButtons;
-                    } else {
-                        // 移除游標，最終渲染
-                        if (answerEl) {
-                            answerEl.innerHTML = marked.parse(localStreamingContent);
-                        }
+                    // 移除游標，最終渲染
+                    if (answerEl) {
+                        answerEl.innerHTML = renderMarkdownSafe(localStreamingContent);
                     }
 
                     // 添加來源
@@ -872,14 +915,16 @@
                         </div>`;
                         sourcesHtml += `<div class="sources-container" id="${sourceId}">`;
 
+                        const topScore = (sources[0] && typeof sources[0].score === 'number') ? sources[0].score : 0;
                         sources.forEach((item, idx) => {
-                            const score = (item.score * 100).toFixed(1);
+                            const scoreRaw = (typeof item.score === 'number') ? item.score : 0;
+                            const scoreRel = (topScore > 0) ? ((scoreRaw / topScore) * 100).toFixed(0) : '0';
                             const faqItemId = `${msgId}-faq-${idx}`;
                             sourcesHtml += `
                                 <div class="faq-item" onclick="toggleFaqAnswer('${faqItemId}')">
                                     <div class="faq-item-header">
                                         <span class="faq-id">FAQ #${item.id}</span>
-                                        <span class="faq-score">RRF: ${score}%</span>
+                                        <span class="faq-score">RRF: ${scoreRaw.toFixed(4)} (Top=${scoreRel}%)</span>
                                         <span class="faq-expand-icon" id="${faqItemId}-icon">▼</span>
                                     </div>
                                     <div class="faq-question">Q: ${escapeHtml(item.question)}</div>
@@ -923,13 +968,8 @@
                     console.error('SSE connection error');
                     if (eventSource) eventSource.close();
 
-                    // 如果沒有內容，顯示聯繫資訊
                     if (answerEl) {
-                        if (!localStreamingContent) {
-                            answerEl.innerHTML = '抱歉，該問題請與李小姐聯繫：<br>電話：(02)2883-4228 #6633<br>Email：lara.li@vteamsystem.com.tw';
-                        } else {
-                            answerEl.innerHTML = marked.parse(localStreamingContent);
-                        }
+                        answerEl.innerHTML = renderMarkdownSafe(localStreamingContent);
                     }
 
                     document.getElementById('typingIndicator').classList.remove('show');
@@ -954,6 +994,7 @@
             document.getElementById('sendBtn').disabled = false;
             document.getElementById('sendBtn').style.display = 'inline-block';
             document.getElementById('stopBtn').style.display = 'none';
+            document.getElementById('cancelEditBtn').style.display = editingMsgId ? 'inline-block' : 'none';
             currentEventSource = null;
         }
 
@@ -964,7 +1005,21 @@
                 currentEventSource = null;
             }
             document.getElementById('typingIndicator').classList.remove('show');
+            document.querySelectorAll('.streaming-cursor').forEach(el => el.remove());
             resetButtons();
+            document.getElementById('chatInput').focus();
+        }
+
+        function cancelEdit() {
+            editingMsgId = null;
+            document.getElementById('cancelEditBtn').style.display = 'none';
+            document.getElementById('chatInput').value = '';
+            document.getElementById('sendBtn').textContent = '發送';
+            if (isStreaming()) {
+                document.getElementById('chatInput').disabled = true;
+                document.getElementById('sendBtn').style.display = 'none';
+                document.getElementById('stopBtn').style.display = 'inline-block';
+            }
             document.getElementById('chatInput').focus();
         }
 
@@ -982,8 +1037,8 @@
                 messageDiv.innerHTML = `
                     <div class="message-bubble">${escapeHtml(content)}</div>
                     <div class="message-actions">
-                        <button class="msg-action-btn" onclick="editMessage('${msgId}')" title="編輯">✏️</button>
-                        <button class="msg-action-btn" onclick="deleteMessage('${msgId}')" title="刪除">🗑️</button>
+                        <button type="button" class="msg-action-btn" onclick="editMessage(event, '${msgId}')" title="編輯">✏️</button>
+                        <button type="button" class="msg-action-btn" onclick="deleteMessage(event, '${msgId}')" title="刪除">🗑️</button>
                     </div>
                     <div class="message-time">${time}</div>
                 `;
@@ -1032,7 +1087,11 @@
         }
 
         // 編輯訊息
-        function editMessage(msgId) {
+        function editMessage(e, msgId) {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
             const msgEl = document.getElementById(msgId);
             if (!msgEl) return;
 
@@ -1040,23 +1099,32 @@
             document.getElementById('chatInput').value = content;
             document.getElementById('chatInput').focus();
 
-            // 刪除此訊息及其後所有訊息
-            deleteMessageAndFollowing(msgId);
+            editingMsgId = msgId;
+            document.getElementById('cancelEditBtn').style.display = 'inline-block';
+
+            if (isStreaming()) {
+                document.getElementById('chatInput').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+                document.getElementById('sendBtn').style.display = 'inline-block';
+            }
+            document.getElementById('sendBtn').textContent = '確認編輯';
         }
 
         // 刪除訊息（及其回覆）
-        function deleteMessage(msgId) {
-            const msgEl = document.getElementById(msgId);
-            if (!msgEl) return;
-
-            // 刪除用戶訊息
-            const nextEl = msgEl.nextElementSibling;
-            msgEl.remove();
-
-            // 如果下一個是系統回覆，也刪除
-            if (nextEl && nextEl.classList.contains('system')) {
-                nextEl.remove();
+        function deleteMessage(e, msgId) {
+            if (e) {
+                e.preventDefault();
+                e.stopPropagation();
             }
+            if (isStreaming()) {
+                alert('回答生成中，請先按「停止」或等待完成後再刪除。');
+                return;
+            }
+
+            if (!confirm('確定要刪除此訊息及其後續對話嗎？')) {
+                return;
+            }
+            deleteMessageAndFollowing(msgId);
         }
 
         // 刪除指定訊息及其後所有訊息

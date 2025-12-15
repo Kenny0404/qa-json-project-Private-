@@ -10,7 +10,7 @@ public interface ChatService {
 
     /**
      * 處理 Streaming 聊天請求
-     * 
+     *
      * @param question  使用者問題
      * @param sessionId Session ID（可選，如果為 null 則自動生成）
      * @param topN      返回 FAQ 數量
@@ -20,7 +20,7 @@ public interface ChatService {
 
     /**
      * 處理非 Streaming 聊天請求
-     * 
+     *
      * @param question  使用者問題
      * @param sessionId Session ID（可選）
      * @param topN      返回 FAQ 數量

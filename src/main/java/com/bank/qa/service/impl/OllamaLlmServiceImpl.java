@@ -16,11 +16,16 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
 /**
- * Ollama LLM 服務實作
- * 封裝對 Ollama API 的所有呼叫
+ * Ollama LLM 服務實作 (Ollama LLM Service Implementation)
+ * <p>
+ * 功能：
+ * 封裝對 Ollama API (如 Ministral-8b) 的所有 HTTP 呼叫，提供同步 (Sync) 與串流 (Streaming)
+ * 兩種互動模式，
+ * 並包含查詢擴展 (Multi-Query Expansion) 與 RAG 答案生成的 Prompt 建構邏輯。
  */
 @Service
 public class OllamaLlmServiceImpl implements OllamaLlmService {
@@ -38,6 +43,22 @@ public class OllamaLlmServiceImpl implements OllamaLlmService {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    /**
+     * 同步呼叫 (Synchronous Call)
+     * <p>
+     * 功能：
+     * 向 Ollama 發送單次請求並等待完整回應回傳 (stream=false)。
+     * <p>
+     * 流程：
+     * 1. 建立 HTTP POST 連線至 `/api/generate`。
+     * 2. 建構 JSON Body (包含 model, prompt, options)。
+     * 3. 發送請求並從 InputStream 讀取回應。
+     * 4. 解析回傳 JSON 中的 `response` 欄位並組合。
+     *
+     * @param prompt      提示詞
+     * @param temperature 溫度參數 (0-1)
+     * @return 完整回應字串
+     */
     @Override
     public String call(String prompt, double temperature) {
         try {
@@ -79,6 +100,29 @@ public class OllamaLlmServiceImpl implements OllamaLlmService {
 
     @Override
     public void callStreaming(String prompt, double temperature, Consumer<String> onChunk) {
+        callStreaming(prompt, temperature, onChunk, () -> false);
+    }
+
+    /**
+     * 串流呼叫 (Streaming Call)
+     * <p>
+     * 功能：
+     * 向 Ollama 發送請求並以串流方式接收回應 (stream=true)。支援中途取消。
+     * <p>
+     * 流程：
+     * 1. 建立 HTTP POST 連線，設定 `stream: true`。
+     * 2. 逐行讀取 Response Stream。
+     * 3. 每一行解析 JSON，提取 `response` 內容。
+     * 4. 透過 `onChunk` Callback 即時將片段回傳給上層調用者。
+     * 5. 檢查 `cancelled` 狀態，若為 true 則斷開連線並停止讀取。
+     *
+     * @param prompt      提示詞
+     * @param temperature 溫度參數
+     * @param onChunk     接收片段的回呼函式
+     * @param cancelled   檢查是否取消的函式 (可為 null)
+     */
+    @Override
+    public void callStreaming(String prompt, double temperature, Consumer<String> onChunk, BooleanSupplier cancelled) {
         try {
             Map<String, Object> request = new HashMap<>();
             request.put("model", model);
@@ -102,6 +146,10 @@ public class OllamaLlmServiceImpl implements OllamaLlmService {
                     new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
+                    if (cancelled != null && cancelled.getAsBoolean()) {
+                        break;
+                    }
+
                     JsonNode node = objectMapper.readTree(line);
                     if (node.has("response")) {
                         String chunk = node.get("response").asText();
@@ -113,6 +161,10 @@ public class OllamaLlmServiceImpl implements OllamaLlmService {
                         break;
                     }
                 }
+            } finally {
+                if (cancelled != null && cancelled.getAsBoolean()) {
+                    conn.disconnect();
+                }
             }
             logger.debug("Ollama Streaming 完成");
         } catch (Exception e) {
@@ -121,6 +173,21 @@ public class OllamaLlmServiceImpl implements OllamaLlmService {
         }
     }
 
+    /**
+     * 查詢擴展 (Query Expansion)
+     * <p>
+     * 功能：
+     * 利用 LLM 將單一使用者查詢改寫為三個版本，以提升檢索覆蓋率。
+     * <p>
+     * 流程：
+     * 1. 建立 Prompt，要求 LLM 生成：原始版、關鍵字版、口語化版。
+     * 2. 強制 LLM 輸出 JSON 格式。
+     * 3. 解析 JSON 並封裝為 `MultiQueryResult`。
+     * 4. 若解析失敗，則三個版本皆回退為原始查詢。
+     *
+     * @param query 原始查詢
+     * @return MultiQueryResult 擴展結果
+     */
     @Override
     public MultiQueryResult expandQuery(String query) {
         String prompt = String.format("""
@@ -167,6 +234,23 @@ public class OllamaLlmServiceImpl implements OllamaLlmService {
         callStreaming(prompt, 0.3, onChunk);
     }
 
+    /**
+     * 串流生成 RAG 回答 (Generate Answer Streaming via RAG)
+     * <p>
+     * 功能：
+     * 結合檢索到的 Context 與使用者問題，建構 RAG Prompt 並進行串流生成。
+     */
+    @Override
+    public void generateAnswerStreaming(String question, List<String> contexts, Consumer<String> onChunk,
+            BooleanSupplier cancelled) {
+        String contextText = String.join("\n\n---\n\n", contexts);
+        String prompt = buildRagPrompt(question, contextText);
+        callStreaming(prompt, 0.3, onChunk, cancelled);
+    }
+
+    /**
+     * 建構 RAG 提示詞
+     */
     private String buildRagPrompt(String question, String contextText) {
         return String.format("""
                 你是銀行 Factoring（應收帳款融資）業務的專業客服助理。
@@ -185,37 +269,6 @@ public class OllamaLlmServiceImpl implements OllamaLlmService {
 
                 請回答：
                 """, question, contextText);
-    }
-
-    @Override
-    public boolean isQueryRelated(String currentQuery, String previousQuery) {
-        if (previousQuery == null || previousQuery.isEmpty()) {
-            return false;
-        }
-
-        String prompt = String.format("""
-                判斷以下兩個問題是否屬於同一個主題或有上下文關係：
-
-                前一個問題：%s
-                當前問題：%s
-
-                判斷標準：
-                - 如果當前問題是前一個問題的追問、補充、延續，回答 YES
-                - 如果當前問題是完全不同的主題，回答 NO
-
-                只回答 YES 或 NO，不要有其他文字。
-                """, previousQuery, currentQuery);
-
-        try {
-            String response = call(prompt, 0.1);
-            String answer = response.trim().toUpperCase();
-            boolean related = answer.contains("YES");
-            logger.info("問題相關性判斷: '{}' vs '{}' = {}", previousQuery, currentQuery, related);
-            return related;
-        } catch (Exception e) {
-            logger.warn("問題相關性判斷失敗: {}", e.getMessage());
-            return true;
-        }
     }
 
     @Override

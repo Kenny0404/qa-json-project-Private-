@@ -1,4 +1,4 @@
-package com.bank.qa.controller;
+package com.bank.qa.userapi.controller;
 
 import com.bank.qa.service.FaqService;
 import org.springframework.beans.factory.annotation.Autowired;

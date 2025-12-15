@@ -4,20 +4,28 @@ import com.bank.qa.model.ChatSession;
 import com.bank.qa.service.GuardrailService;
 import com.bank.qa.model.IntentResult;
 import com.bank.qa.service.OllamaLlmService;
+import com.bank.qa.service.RuntimeConfigService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * 護欄服務實作
- * 處理意圖分類、護欄回應、升級邏輯
+ * 護欄服務實作 (Guardrail Service Implementation)
+ * <p>
+ * 功能：
+ * 建構系統的第一道防線，透過 LLM 對使用者問題進行意圖分類 (Intent Classification)，
+ * 攔截不相關 (Unrelated) 或不明確 (Unclear) 的問題，並提供升級 (Escalation) 機制。
+ * <p>
+ * 流程概述：
+ * 1. 建構詳細的 System Prompt 描述業務範圍。
+ * 2. 呼叫 LLM 獲取 JSON 格式的分類結果。
+ * 3. 追蹤 Session 的連續失敗次數，決定是否觸發人工轉接。
  */
 @Service
 public class GuardrailServiceImpl implements GuardrailService {
@@ -27,20 +35,25 @@ public class GuardrailServiceImpl implements GuardrailService {
     @Autowired
     private OllamaLlmService llmService;
 
+    @Autowired
+    private RuntimeConfigService runtimeConfigService;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${guardrail.escalate-after:3}")
-    private int escalateAfterCount;
-
-    @Value("${guardrail.contact-name:李小姐}")
-    private String contactName;
-
-    @Value("${guardrail.contact-phone:(02)2883-4228 #6633}")
-    private String contactPhone;
-
-    @Value("${guardrail.contact-email:lara.li@vteamsystem.com.tw}")
-    private String contactEmail;
-
+    /**
+     * 意圖分類 (Classify Intent)
+     * <p>
+     * 功能：
+     * 將使用者問題送入 LLM，判斷其是否屬於銀行 Factoring 業務範疇。
+     * <p>
+     * 流程：
+     * 1. 組合 Prompt：明確定義什麼是「相關領域」（如發票管理、額度管理）與「不相關領域」（如信用卡、生活問題）。
+     * 2. 呼叫 LLM：要求返回 JSON 格式，包含 `intent` (RELATED/UNRELATED/UNCLEAR) 與建議關鍵字。
+     * 3. 解析結果：將 LLM 輸出的文字解析為 `IntentResult` 物件。若解析失敗則預設視為 RELATED 以免誤殺。
+     *
+     * @param question 使用者問題
+     * @return IntentResult 意圖分類結果
+     */
     @Override
     public IntentResult classifyIntent(String question) {
         String prompt = String.format(
@@ -52,6 +65,7 @@ public class GuardrailServiceImpl implements GuardrailService {
                         - 發票管理（發票日、到期日、過期發票、發票修改）
                         - 額度管理（總約、附約、維持率、額度凍結）
                         - 流程操作（主管核准、資料修改、系統建檔、交易錯誤處理）
+                        - 憑證/傳票/報表（傳票列印、憑證列印、查詢傳票、日結單/傳票相關）
 
                         不相關的問題包括：
                         - 統一發票中獎、兌獎
@@ -74,6 +88,17 @@ public class GuardrailServiceImpl implements GuardrailService {
         }
     }
 
+    /**
+     * 解析意圖結果 (Parse Intent Result)
+     * <p>
+     * 功能：
+     * 從 LLM 的回應字串中提取並解析 JSON 物件。
+     * <p>
+     * 流程：
+     * 1. 使用字串定位 `{` 與 `}` 找到 JSON 區塊。
+     * 2. 使用 Jackson ObjectMapper 解析 JSON。
+     * 3. 提取 `intent`、`message` 與 `suggestKeywords` 欄位。
+     */
     private IntentResult parseIntentResult(String response) {
         try {
             // 提取 JSON
@@ -114,15 +139,31 @@ public class GuardrailServiceImpl implements GuardrailService {
                 : "抱歉，此問題不在本系統服務範圍內。";
     }
 
+    /**
+     * 判斷是否需要升級 (Check Escalation)
+     * <p>
+     * 功能：
+     * 檢查使用者的連續失敗次數是否達到閾值，決定是否提供人工聯繫資訊。
+     * <p>
+     * 流程：
+     * 1. 從 Session 取得 `consecutiveUnrelatedCount`。
+     * 2. 從 `RuntimeConfigService` 取得設定的閾值 (`guardrailEscalateAfter`)。
+     * 3. 比較兩者大小。
+     *
+     * @param session 當前對話 Session
+     * @return true 若需要跳轉人工
+     */
     @Override
     public boolean shouldEscalate(ChatSession session) {
-        return session.getConsecutiveUnrelatedCount() >= escalateAfterCount;
+        return session.getConsecutiveUnrelatedCount() >= runtimeConfigService.getGuardrailEscalateAfter();
     }
 
     @Override
     public String getContactInfo() {
         return String.format(
                 "抱歉，該問題請與%s聯繫：\n電話：%s\nEmail：%s",
-                contactName, contactPhone, contactEmail);
+                runtimeConfigService.getGuardrailContactName(),
+                runtimeConfigService.getGuardrailContactPhone(),
+                runtimeConfigService.getGuardrailContactEmail());
     }
 }
